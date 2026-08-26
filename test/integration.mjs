@@ -351,6 +351,69 @@ await check("audit log rotates at maxBytes", async () => {
 	}
 });
 
+await check("SubagentStop fires for child sessions only, SessionEnd on agent disposal", async () => {
+	const subMark = path.join(os.tmpdir(), `dshh-sub-${Date.now()}.flag`);
+	const endMark = path.join(os.tmpdir(), `dshh-end-${Date.now()}.flag`);
+	const env = await freshPlugin([
+		"hooks:",
+		"  SubagentStop:",
+		`    - command: "node -e \\"require('fs').writeFileSync(process.argv[1],'')\\" \\"${subMark.replace(/\\/g, "/")}\\""`,
+		"  SessionEnd:",
+		`    - command: "node -e \\"require('fs').writeFileSync(process.argv[1],'')\\" \\"${endMark.replace(/\\/g, "/")}\\""`,
+		"audit:",
+		"  enabled: false"
+	].join("\n"));
+	try {
+		// Main-session turn/end must NOT trigger SubagentStop.
+		for (const handler of env.ctx.listeners.get("session/event") ?? []) {
+			handler({ header: { id: "main-1", cwd: repo } }, { type: "turn/end", data: { reason: "completed" } });
+			handler({ header: { id: "child-1", parentSession: "main-1", cwd: repo } }, { type: "turn/end", data: { reason: { kind: "completed" } } });
+		}
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		assert.ok(fs.existsSync(subMark), "SubagentStop hook did not run for child session");
+
+		// agent/disposed emit triggers SessionEnd.
+		for (const handler of env.ctx.listeners.get("agent/disposed") ?? []) {
+			handler({ agent: { id: "a-end" } });
+		}
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		assert.ok(fs.existsSync(endMark), "SessionEnd hook did not run on disposal");
+	} finally {
+		try {
+			fs.rmSync(subMark, { force: true });
+			fs.rmSync(endMark, { force: true });
+		} catch {
+			/* best effort */
+		}
+		env.cleanup();
+	}
+});
+
+await check("Notification hooks fire on approval requests", async () => {
+	const noteMark = path.join(os.tmpdir(), `dshh-note-${Date.now()}.flag`);
+	const env = await freshPlugin([
+		"hooks:",
+		"  Notification:",
+		`    - command: "node -e \\"require('fs').writeFileSync(process.argv[1],'')\\" \\"${noteMark.replace(/\\/g, "/")}\\""`,
+		"audit:",
+		"  enabled: false"
+	].join("\n"));
+	try {
+		for (const handler of env.ctx.listeners.get("approval/request") ?? []) {
+			await handler({ toolName: "Pwsh", reason: "危险命令" }, () => Promise.resolve({ kind: "allow-once" }));
+		}
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		assert.ok(fs.existsSync(noteMark), "Notification hook did not run on approval request");
+	} finally {
+		try {
+			fs.rmSync(noteMark, { force: true });
+		} catch {
+			/* best effort */
+		}
+		env.cleanup();
+	}
+});
+
 try {
 	fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
 	fs.rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
