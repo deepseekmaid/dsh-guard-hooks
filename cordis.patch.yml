@@ -1,0 +1,6 @@
+# dsh-guard-hooks bundle layer — auto-applied when installed via `dsh plugin add`
+# (declared in package.json as dsh.bundle.patch), or paste this insert into
+# your profile's cordis.patch.yml when mounting manually.
+- insert:
+    - id: dsh-guard-hooks
+      name: dsh-guard-hooks

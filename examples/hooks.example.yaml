@@ -1,0 +1,98 @@
+# ============================================================
+# dsh-guard-hooks 示例配置
+# 用户级: ~/.dsh/hooks.yaml        （对所有会话生效）
+# 项目级: <仓库根>/.dsh/hooks.yaml  （追加合并，inherit: false 可脱离用户级）
+# 改完即生效（插件热重载，约 1~2 秒），无需重启 DSH。
+# 配置写坏也不会失去防护：插件保持上一个好快照，修复后自动恢复。
+# ============================================================
+
+# ---------- ① 危险命令拦截（内置规则引擎，免脚本） ----------
+# 求值顺序 deny → ask → warn → allow；工具名/模式匹配大小写不敏感
+rules:
+  # 命中 → 直接拒绝，reason 回灌给模型
+  deny:
+    - "rm -rf /*"
+    - "rm -rf ~*"
+    - "Remove-Item*-Recurse*-Force*C:\\*"
+    - ":(){ :|:& };:"
+    - "git push --force *main*"
+    - "git push -f *master*"
+    - "shutdown*"
+    - "reg delete HKLM*"
+    - "/rd /s /q C:\\\\Windows/i"   # /.../i 形式 = 正则 + 忽略大小写
+    - "/rm -rf ~?\\//i"                                  # 子串级：复合命令夹带 rm -rf / 或 rm -rf ~/ 也命中
+    - "/(^|[;&|])\\s*Remove-Item\\s+[^;&|]*-Recurse/i"   # 复合命令里的递归删除同样命中
+  # 命中 → 转人工审批门（DSH approval 流程，fail-closed：不批就不跑）
+  ask:
+    - "npm publish*"
+    - "deploy production*"
+  # 命中 → 标记为需谨慎（警示回灌给模型，不阻断）
+  warn:
+    - "git reset --hard*"
+    - "/DROP TABLE/i"
+  # 命中 → 直接放行，跳过本事件其余 hook（省超时开销）
+  allow:
+    - "git status*"
+    - "git log*"
+    - "git diff*"
+    - "ls *"
+    - "Get-ChildItem*"
+
+# 通配语法：* 匹配任意字符（含空格），? 单字符。注意通配是「锚定全串」匹配，
+# 拦不住复合命令（如 cd x && rm -rf /）里夹带的片段；子串级检测必须写 /正则/i 形式
+# 每档最多 500 条；单个事件最多 100 条脚本钩子
+
+# ---------- ② 存盘自动 format/lint ----------
+formatOnSave:
+  enabled: true
+  rules:
+    - match: "*.ts,*.tsx,*.js,*.jsx,*.mjs,*.json,*.css,*.md"   # 扩展名匹配忽略大小写
+      command: "npx prettier --write {file}"
+      timeoutMs: 30000
+    - match: "*.py"
+      command: "ruff format {file}"
+    - match: "*.go"
+      command: "gofmt -w {file}"
+  # 失败时把 stderr 尾巴回灌给模型让它自己修
+  reportErrors: true
+
+# ---------- ③ 脚本钩子（完整表达力，对齐 Claude Code 协议） ----------
+hooks:
+  PreToolUse:
+    # matcher 是正则（大小写不敏感），匹配工具名；省略 = 匹配所有工具
+    - matcher: "Bash|Pwsh"
+      command: "pwsh -NoProfile -File C:/scripts/dsh-guard.ps1"
+      timeoutMs: 10000        # 钳制在 100ms ~ 10min；超时杀进程树
+      async: false            # true = 发射后不管（全局并发上限 8，超出排队）
+      # shell: "powershell"   # 可选：自定义 shell 可执行文件；false = 不经过 shell 直接派发
+  PostToolUse:
+    - command: "node C:/scripts/log-tool-use.js"
+      async: true
+    # PostToolUse 钩子也能 block：stdout {"decision":"block","reason":"..."} 会把
+    # 成功结果打成纠正性错误回灌给模型
+  UserPromptSubmit:
+    - command: "node C:/scripts/inject-context.js"
+  Stop:
+    - command: "node C:/scripts/on-turn-end.js"
+
+# ---------- ④ 桌面通知 ----------
+notify:
+  onStop: true          # 回合结束弹 Windows toast
+  onApprovalWait: true  # 等你审批时提醒（防止挂着不知道）
+  onIntercept: false    # 规则/钩子拦截发生时弹窗提醒
+  sound: false
+
+# ---------- ⑤ 审计日志 ----------
+audit:
+  enabled: true
+  path: "~/.dsh/audit/hooks.jsonl"
+  maxBytes: 20971520    # 超过 20MB 自动轮转为 .1 备份
+  redact: ["Authorization", "*key*", "*token*", "*secret*", "*password*"]
+
+# ---------- ⑥ Webhook 推送 ----------
+webhook:
+  url: ""
+  events: [Stop]              # 空 = 全部事件
+  headers: {}
+  secret: ""                  # 非空时自动加 X-DSH-Signature: sha256=<hmac hex> 签名头
+  timeoutMs: 5000

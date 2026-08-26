@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# logs & debug
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# tool working artifacts
+.code-check.db
+.claude/
