@@ -1,7 +1,7 @@
 {
   "name": "dsh-guard-hooks",
   "description": "Claude Code-style user-configurable hooks for DeepSeek Harness (DSH): PreToolUse interception, format-on-save, desktop notifications, audit log, webhook push",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "author": "huzhw",
