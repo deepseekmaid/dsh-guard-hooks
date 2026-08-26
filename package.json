@@ -4,6 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
+  "author": "huzhw",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huzhw/dsh-guard-hooks.git"
+  },
+  "homepage": "https://github.com/huzhw/dsh-guard-hooks#readme",
+  "bugs": {
+    "url": "https://github.com/huzhw/dsh-guard-hooks/issues"
+  },
   "keywords": [
     "dsh",
     "deepseek-harness",

@@ -6,6 +6,13 @@ English | [中文](README.zh.md)
 
 ## Install
 
+**From npm**:
+
+```powershell
+# install into a pool directory, then wire the mount yourself — see "Manual mount" below
+npm i dsh-guard-hooks --prefix <pool-dir>
+```
+
 **From a local folder** (e.g. someone shared this directory with you):
 
 ```powershell

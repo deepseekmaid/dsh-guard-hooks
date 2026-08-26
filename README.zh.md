@@ -25,6 +25,12 @@ dsh plugin --profile web add C:\path\to\dsh-guard-hooks
 # 包内自带 cordis.patch.yml bundle 声明，重启即生效
 ```
 
+**从 npm 安装**（装到共享池目录，再按下方「手动挂载」接挂载行）：
+
+```powershell
+npm i dsh-guard-hooks --prefix <共享池目录>
+```
+
 **手动挂载**（注意相对路径锚点是 profile 目录，包在共享池要写 `../`）：
 
 ```yaml
