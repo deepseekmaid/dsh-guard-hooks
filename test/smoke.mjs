@@ -182,6 +182,38 @@ await check("stdout JSON decision overrides exit code", async () => {
 	assert.equal(block.reason, "危险");
 });
 
+await check("hookSpecificOutput.permissionDecision deny / ask / allow / additionalContext", async () => {
+	const deny = await runHook({
+		command: 'node -e "console.log(JSON.stringify({hookSpecificOutput:{hookEventName:\'PreToolUse\',permissionDecision:\'deny\',permissionDecisionReason:\'危险操作\'}}))"',
+		payload: {}
+	});
+	assert.equal(deny.blocked, true);
+	assert.equal(deny.ask, false);
+	assert.equal(deny.reason, "危险操作");
+
+	const ask = await runHook({
+		command: 'node -e "console.log(JSON.stringify({hookSpecificOutput:{hookEventName:\'PreToolUse\',permissionDecision:\'ask\',permissionDecisionReason:\'需人工确认\'}}))"',
+		payload: {}
+	});
+	assert.equal(ask.ask, true);
+	assert.equal(ask.blocked, false);
+	assert.equal(ask.approved, false);
+	assert.equal(ask.reason, "需人工确认");
+
+	const allow = await runHook({
+		command: 'node -e "console.log(JSON.stringify({hookSpecificOutput:{hookEventName:\'PreToolUse\',permissionDecision:\'allow\'}}))"',
+		payload: {}
+	});
+	assert.equal(allow.approved, true);
+	assert.equal(allow.ok, true);
+
+	const context = await runHook({
+		command: 'node -e "console.log(JSON.stringify({hookSpecificOutput:{hookEventName:\'UserPromptSubmit\',additionalContext:\'记得X\'}}))"',
+		payload: {}
+	});
+	assert.equal(context.additionalContext, "记得X");
+});
+
 await check("timeout kills the hook", async () => {
 	const res = await runHook({
 		command: "node -e \"setTimeout(()=>{},60000)\"",
