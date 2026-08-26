@@ -13,3 +13,6 @@ Thumbs.db
 # tool working artifacts
 .code-check.db
 .claude/
+
+# local-only release notes (not for distribution)
+发版说明*.md
