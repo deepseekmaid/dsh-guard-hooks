@@ -119,8 +119,18 @@ Script contract:
 - stdin JSON: `{event, sessionId, cwd, timestamp, tool?, input?, output?, prompt?}`
 - env vars: `DSH_EVENT`, `DSH_TOOL_NAME`, `DSH_SESSION_ID`, `DSH_CWD`
 - **exit codes**: `0` pass (PostToolUse stdout becomes additional context); `2` block (stderr is the reason); anything else = non-blocking error, audited only
-- **stdout decision JSON** wins over exit codes: PreToolUse `{"decision":"block","reason":"…"}` / `{"decision":"approve"}`; PostToolUse can also block (turns a successful result into a corrective error); `{"additionalContext":"…"}` injects context
-- Compatibility scope: this mirrors the *classic* Claude Code protocol — the newer `hookSpecificOutput.permissionDecision` syntax and blocking Stop hooks are not supported
+- **stdout decision JSON** wins over exit codes; both syntaxes supported:
+  - classic: PreToolUse `{"decision":"block","reason":"…"}` / `{"decision":"approve"}`; PostToolUse can also block (turns a successful result into a corrective error); `{"additionalContext":"…"}` injects context
+  - newer (CC hookSpecificOutput): `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"|"deny"|"ask","permissionDecisionReason":"…"}}` — `deny` blocks, `ask` routes through the human approval gate, `allow` passes; the newer shape wins when both appear
+
+**Blocking Stop hooks**: a Stop hook that returns a block verdict (exit 2 or decision JSON) feeds its reason back as a new instruction and the **same turn continues** — Claude Code's "block and continue" semantics. Runaway guard: after `stop.maxContinues` consecutive continuations per agent (default 3) the turn is allowed to close; any fresh human message resets the budget immediately.
+
+```yaml
+stop:
+  maxContinues: 3
+```
+
+**Event set**: PreToolUse / PostToolUse / UserPromptSubmit / Notification (approval needed) / Stop / SubagentStop (a subagent's turn ended) / SessionEnd (agent disposed) / PreCompact / SessionStart. Lifecycle events carry no tool name — a `matcher` on those entries is ignored and reported once.
 
 ### formatOnSave
 
@@ -180,7 +190,7 @@ Fire-and-forget POST; failures are logged only.
 - **Config never disarms protection**: broken YAML keeps the last good snapshot until fixed
 - **Zero undeclared service reads**: the plugin never touches Cordis context services without an `inject` declaration (context proxies throw on undeclared property access — learned the hard way)
 - **Outside the agent sandbox**: hooks are spawned by the host process; shell-tool sandboxing does not affect them
-- **Protocol-compatible (classic)**: stdin JSON, exit codes 0/2, and stdout decision JSON match Claude Code Hooks conventions, so most existing scripts/docs port directly; the newer permissionDecision syntax and the Notification / SubagentStop / SessionEnd events are not covered
+- **Protocol-compatible**: stdin JSON, exit codes 0/2, classic stdout decision JSON and the newer `hookSpecificOutput.permissionDecision` syntax all match Claude Code Hooks conventions; Notification / SubagentStop / SessionEnd are wired, and Stop hooks can block-and-continue a turn (capped by `stop.maxContinues`)
 
 ## License
 

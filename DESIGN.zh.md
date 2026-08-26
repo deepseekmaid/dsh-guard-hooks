@@ -13,14 +13,17 @@
 
 | Hook 事件 | Claude Code 对应 | 触发时机 | 可否拦截 |
 |---|---|---|---|
-| `PreToolUse` | PreToolUse | 工具执行前，拿到 `{tool, input}` | ✅ deny 阻断并回灌原因 |
-| `PostToolUse` | PostToolUse | 工具执行成功后，拿到 `{tool, input, output}` | ❌ 仅观察/反馈 |
+| `PreToolUse` | PreToolUse | 工具执行前，拿到 `{tool, input}` | ✅ deny 阻断并回灌原因；ask 转人工审批门 |
+| `PostToolUse` | PostToolUse | 工具执行成功后，拿到 `{tool, input, output}` | ✅ block 打成纠正性反馈 |
 | `UserPromptSubmit` | UserPromptSubmit | 用户提示词入库前 | ✅ 可阻断、可注入上下文 |
-| `Stop` | Stop | agent 回合结束 | ❌ |
+| `Notification` | Notification | 需要人工审批时（approval/request 别名） | ❌ |
+| `Stop` | Stop | 主 agent 回合即将收尾（agent/turn-stopping 边界） | ✅ block 强制续回合，连续次数由 `stop.maxContinues` 封顶 |
+| `SubagentStop` | SubagentStop | 子代理回合结束（header 带 parentSession 的会话） | ❌ |
+| `SessionEnd` | SessionEnd | agent 销毁、会话下线 | ❌ |
 | `PreCompact` | PreCompact | 上下文压缩前 | ❌ |
 | `SessionStart` | SessionStart | 会话创建/恢复 | ❌ |
 
-> 与 CC 的已知差异：Notification / SubagentStop / SessionEnd 三事件未实现（审批提醒场景由 notify.onApprovalWait 部分覆盖）；Stop 是通知型钩子，不支持 CC 的「block 强制继续回合」语义。
+> 实现接缝：Stop 走 `agent/turn-stopping` 瀑布——DSH 在轮次关闭前重查 inbox，钩子 block 时把 reason 经 `agent.steer()` 注回同一轮继续跑；SessionEnd 走 `agent/disposed`；SubagentStop 复用持久 `session/event` 流按 parentSession 分流。
 
 每个事件可挂多条 hook；每条 hook：
 
@@ -41,9 +44,9 @@ hooks:
   - `0` 放行；stdout 在 PostToolUse 里作为附加上下文回灌
   - `2` 拦截：stderr（或 stdout JSON 的 reason）作为拒绝原因回给模型
   - 其他非零：非阻塞错误，只记审计不干预
-- **stdout JSON 决策**（优先于退出码）：
-  `{"decision":"block","reason":"..."}` / `{"decision":"approve"}` / `{"additionalContext":"..."}`
-- 对齐范围是经典协议：CC 新版 `hookSpecificOutput.permissionDecision` 语法与 Stop 拦截语义不在范围内
+- **stdout JSON 决策**（优先于退出码，双语法）：
+  - 经典：`{"decision":"block","reason":"..."}` / `{"decision":"approve"}` / `{"additionalContext":"..."}`
+  - 新版：`{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"|"deny"|"ask","permissionDecisionReason":"..."}}`，两语法并存时新版优先
 
 ## 3. 内置功能（免脚本层）
 

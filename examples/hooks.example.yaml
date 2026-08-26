@@ -65,15 +65,31 @@ hooks:
       timeoutMs: 10000        # 钳制在 100ms ~ 10min；超时杀进程树
       async: false            # true = 发射后不管（全局并发上限 8，超出排队）
       # shell: "powershell"   # 可选：自定义 shell 可执行文件；false = 不经过 shell 直接派发
+    # 新版决策语法（CC hookSpecificOutput）：deny 拒绝 / ask 转人工审批门 / allow 放行
+    # stdout {"hookSpecificOutput":{"hookEventName":"PreToolUse",
+    #   "permissionDecision":"ask","permissionDecisionReason":"需人工确认"}}
   PostToolUse:
     - command: "node C:/scripts/log-tool-use.js"
       async: true
     # PostToolUse 钩子也能 block：stdout {"decision":"block","reason":"..."} 会把
-    # 成功结果打成纠正性错误回灌给模型
+    # 成功结果打成纠正性错误回灌给模型；{"hookSpecificOutput":{"additionalContext":"..."}} 注入上下文
   UserPromptSubmit:
     - command: "node C:/scripts/inject-context.js"
+  Notification:               # CC Notification 别名：需要人工审批时触发
+    - command: "node C:/scripts/on-notify.js"
   Stop:
     - command: "node C:/scripts/on-turn-end.js"
+    # Stop 钩子可以 block 强制续回合：exit 2 或 stdout {"decision":"block",...}
+    # 会把 reason 作为新指令注回同一轮继续跑；连续续跑次数由 stop.maxContinues 封顶
+  SubagentStop:               # 子代理回合结束时触发（主代理不触发）
+    - command: "node C:/scripts/on-subagent-end.js"
+  SessionEnd:                 # agent 销毁（会话下线）时触发
+    - command: "node C:/scripts/on-session-end.js"
+
+# Stop 钩子防失控预算：同一 agent 被连续 block 续跑 N 次后放行结束；
+# 用户发来新消息会立即重置计数
+stop:
+  maxContinues: 3
 
 # ---------- ④ 桌面通知 ----------
 notify:

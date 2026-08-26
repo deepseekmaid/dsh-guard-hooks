@@ -11,9 +11,9 @@ DSH 的扩展点是 Cordis 插件——能力很强但要写 npm 包；Claude Co
 | 能力 | Claude Code | dsh-guard-hooks |
 |---|---|---|
 | 钩子配置 | `settings.json` 的 `hooks` 段 | `~/.dsh/hooks.yaml`（用户级）+ `.dsh/hooks.yaml`（项目级分层） |
-| 事件 | PreToolUse / PostToolUse / UserPromptSubmit / Stop / PreCompact / SessionStart（另有 Notification / SubagentStop / SessionEnd） | 同名六事件 ✅；CC 的 Notification / SubagentStop / SessionEnd 暂无对应，Stop 为通知型、不能拦截回合 |
+| 事件 | PreToolUse / PostToolUse / UserPromptSubmit / Notification / Stop / SubagentStop / SessionEnd / PreCompact / SessionStart | 同名九事件 ✅ 全覆盖 |
 | 危险命令拦截 | 要自己写脚本 | 内置 `rules:` 规则表，零脚本 ✅ |
-| 脚本协议 | stdin JSON + exit 0/2 + stdout 决策 JSON（经典协议）；新版另有 hookSpecificOutput.permissionDecision | 经典协议对齐 ✅；hookSpecificOutput 语法暂未支持 |
+| 脚本协议 | stdin JSON + exit 0/2 + stdout 决策 JSON（经典协议）；新版另有 hookSpecificOutput.permissionDecision | 经典协议 + hookSpecificOutput 语法均对齐 ✅；Stop 钩子可 block 强制续回合 ✅（连续续跑次数封顶防失控） |
 | 存盘格式化 | 社区方案 | 内置 `formatOnSave:` ✅ |
 | 桌面通知 | iTerm2/bell 等 | Windows toast（零依赖）✅ |
 
@@ -120,7 +120,18 @@ hooks:
 - stdin 收到 JSON：`{event, sessionId, cwd, timestamp, tool?, input?, output?, prompt?}`
 - 环境变量：`DSH_EVENT` `DSH_TOOL_NAME` `DSH_SESSION_ID` `DSH_CWD`
 - **退出码**：`0` 放行（PostToolUse 的 stdout 作为附加上下文回灌）；`2` 拦截（stderr 为拒绝理由）；其他 = 非阻塞错误只记审计
-- **stdout JSON 决策**（优先于退出码）：PreToolUse `{"decision":"block","reason":"…"}` / `{"decision":"approve"}`；PostToolUse 同样可 block（成功结果被打成纠正性错误）；另有 `{"additionalContext":"…"}` 注入上下文
+- **stdout JSON 决策**（优先于退出码，两种语法均支持）：
+  - 经典：PreToolUse `{"decision":"block","reason":"…"}` / `{"decision":"approve"}`；PostToolUse 同样可 block（成功结果被打成纠正性错误）；另有 `{"additionalContext":"…"}` 注入上下文
+  - 新版（CC hookSpecificOutput）：`{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"|"deny"|"ask","permissionDecisionReason":"…"}}`——`deny` 拒绝、`ask` 转人工审批门、`allow` 放行；两种语法同时出现时新版优先
+
+**Stop 钩子的 block 强制续回合**：Stop 钩子返回拦截（exit 2 或决策 JSON）时，reason 会作为新指令注回**同一轮继续跑**——CC「block and continue」语义。防失控预算：同一 agent 连续续跑 `stop.maxContinues` 次（默认 3）后放行结束；用户发来新消息立即重置计数。
+
+```yaml
+stop:
+  maxContinues: 3
+```
+
+**事件全集**：PreToolUse / PostToolUse / UserPromptSubmit / Notification（需要人工审批时）/ Stop / SubagentStop（子代理回合结束）/ SessionEnd（agent 销毁）/ PreCompact / SessionStart。生命周期事件没有工具名，条目写 `matcher` 会被忽略并告警一次。
 
 ### formatOnSave —— 存盘自动格式化
 
@@ -169,7 +180,7 @@ POST JSON，fire-and-forget，失败只记日志。
 - **零未声明依赖**：不读取任何未 inject 声明的 Cordis 服务（Context 代理对未声明属性访问会抛错——这条铁律曾用一次真实死锁换来）
 - **不经沙箱**：钩子由宿主进程直接 spawn，与 agent 的 shell 工具沙箱策略互不影响
 - **热重载**：改 `hooks.yaml` 即生效；插件代码更新后把挂载行 `?v=N` 加一强制热换，或重启 DSH
-- **协议兼容（经典版）**：stdin JSON、退出码 0/2、stdout 决策 JSON 与 Claude Code Hooks 对齐，现有脚本文档基本可直接照搬；CC 新版 `hookSpecificOutput.permissionDecision` 语法、Stop 钩子拦截语义与 Notification / SubagentStop / SessionEnd 三事件暂未支持
+- **协议兼容**：stdin JSON、退出码 0/2、经典 stdout 决策 JSON 与新版 `hookSpecificOutput.permissionDecision` 语法均与 Claude Code Hooks 对齐；Notification / SubagentStop / SessionEnd 三事件已接线；Stop 钩子支持 block 强制续回合（`stop.maxContinues` 封顶防失控），现有 CC 脚本文档可直接照搬
 
 ## 排障速查
 

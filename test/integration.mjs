@@ -414,6 +414,78 @@ await check("Notification hooks fire on approval requests", async () => {
 	}
 });
 
+await check("blocking Stop hook steers continuation, capped by stop.maxContinues", async () => {
+	const env = await freshPlugin([
+		"hooks:",
+		"  Stop:",
+		"    - command: \"exit 2\"",
+		"audit:",
+		"  enabled: false"
+	].join("\n"));
+	try {
+		const steered = [];
+		const agent = {
+			id: "ag-stop",
+			session: { header: { cwd: repo } },
+			steer(message) { steered.push(message); }
+		};
+		const fire = async () => {
+			for (const handler of env.ctx.listeners.get("agent/turn-stopping") ?? []) {
+				await handler({ agent, turn: 1 }, async () => {});
+			}
+		};
+		await fire();
+		await fire();
+		await fire();
+		await fire();
+		assert.equal(steered.length, 3, "must steer exactly maxContinues (default 3) times");
+		const text = steered[0]?.content?.[0]?.text ?? "";
+		assert.ok(text.includes("blocked by hook"), "steer message must carry the block reason");
+		assert.equal(steered[0]?.source?.plugin, "dsh-guard-hooks");
+	} finally {
+		env.cleanup();
+	}
+});
+
+await check("fresh human prompt re-arms the Stop-continue budget", async () => {
+	const env = await freshPlugin([
+		"hooks:",
+		"  Stop:",
+		"    - command: \"exit 2\"",
+		"audit:",
+		"  enabled: false"
+	].join("\n"));
+	try {
+		const steered = [];
+		const agent = {
+			id: "ag-reset",
+			session: { header: { cwd: repo } },
+			steer(message) { steered.push(message); }
+		};
+		const fireStop = async () => {
+			for (const handler of env.ctx.listeners.get("agent/turn-stopping") ?? []) {
+				await handler({ agent, turn: 1 }, async () => {});
+			}
+		};
+		await fireStop();
+		await fireStop();
+		await fireStop();
+		assert.equal(steered.length, 3);
+
+		// A fresh human message arrives through pre-step → budget resets.
+		const batch = [{ id: `human-${Date.now()}`, role: "user", content: [{ type: "text", text: "继续干活" }] }];
+		for (const handler of env.ctx.listeners.get("agent/pre-step") ?? []) {
+			await handler({ agent, messages: batch, turn: 2, step: 0, signal: new AbortController().signal }, () =>
+				Promise.resolve({ kind: "enter", messages: batch })
+			);
+		}
+		await fireStop();
+		assert.equal(steered.length, 4, "budget must be re-armed by human input");
+	} finally {
+		env.cleanup();
+	}
+});
+
 try {
 	fs.rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
 	fs.rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
